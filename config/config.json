@@ -1,0 +1,28 @@
+{
+  "service": {
+    "port": 9015,
+    "pollIntervalSeconds": 10,
+    "batchSize": 25,
+    "autoStart": true
+  },
+  "hana": {
+    "serverNode": "172.19.0.88:30015",
+    "uid": "SYSTEM",
+    "pwd": "Admin123",
+    "schema": "FG_DESARROLLO",
+    "table": "TBL_COMERCIA_EVENTS"
+  },
+  "sapServiceLayer": {
+    "baseUrl": "https://172.19.0.88:50000/b1s/v1",
+    "companyDb": "FG_DESARROLLO",
+    "userName": "gualber",
+    "password": "2300160",
+    "sslValidate": false
+  },
+  "ingestion": {
+    "baseUrl": "https://api.comercia.pro/api/v1/admin/socios-negocio/empresas",
+    "empresaId": 2,
+    "endpointTemplate": "/{empresaId}/tbl_ocrd/{CardCode}",
+    "timeoutMs": 15000
+  }
+}
