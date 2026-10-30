@@ -122,12 +122,21 @@ New-Item -ItemType Directory -Path "C:\inetpub\ingestiaFront" -Force
 
 ### Paso 3: Despliegue del Backend (`ingestiaBack`) en Puerto 9015 con NSSM
 
-1. **Copiar o Clonar el Código**:
-   ```powershell
-   cd C:\inetpub\ingestiaBack
-   git clone https://github.com/gsilverd2239/ingestiaBack.git .
-   ```
-   *(O copiar manualmente los archivos asegurando que `src/`, `config/`, `package.json` queden en la raíz de `C:\inetpub\ingestiaBack`)*.
+1. **Descargar el Código en `C:\inetpub\ingestiaBack`**:
+   - **Opción A (Recomendada si NO tienes Git instalado en el servidor)**:
+     ```powershell
+     cd C:\inetpub\ingestiaBack
+     Invoke-WebRequest -Uri "https://github.com/gsilverd2239/ingestiaBack/archive/refs/heads/master.zip" -OutFile "back.zip"
+     Expand-Archive -Path "back.zip" -DestinationPath "temp_back" -Force
+     Copy-Item -Path "temp_back\ingestiaBack-master\*" -Destination "C:\inetpub\ingestiaBack" -Recurse -Force
+     Remove-Item "back.zip", "temp_back" -Recurse -Force
+     ```
+   - **Opción B (Si tienes Git instalado en el servidor)**:
+     ```powershell
+     cd C:\inetpub\ingestiaBack
+     git clone https://github.com/gsilverd2239/ingestiaBack.git .
+     ```
+   *(O bien copiar manualmente los archivos desde tu equipo asegurando que `src/`, `config/`, `package.json` queden en la raíz de `C:\inetpub\ingestiaBack`)*.
 
 2. **Instalar Dependencias**:
    ```powershell
@@ -176,11 +185,20 @@ El Frontend es una aplicación Next.js. La arquitectura recomendada y estándar 
 - **Next.js Server**: Corre internamente en el puerto `9026` mediante un servicio NSSM (`ingestiaFrontSvc`).
 - **IIS Web Site**: Escucha en el puerto oficial **`9025`** y utiliza el archivo `web.config` (con URL Rewrite + ARR) para reenviar las peticiones al servidor Next.js, permitiendo administrar certificados SSL, encabezados y seguridad desde IIS.
 
-1. **Copiar o Clonar el Código**:
-   ```powershell
-   cd C:\inetpub\ingestiaFront
-   git clone https://github.com/gsilverd2239/ingestiaFront.git .
-   ```
+1. **Descargar el Código en `C:\inetpub\ingestiaFront`**:
+   - **Opción A (Recomendada si NO tienes Git instalado en el servidor)**:
+     ```powershell
+     cd C:\inetpub\ingestiaFront
+     Invoke-WebRequest -Uri "https://github.com/gsilverd2239/ingestiaFront/archive/refs/heads/master.zip" -OutFile "front.zip"
+     Expand-Archive -Path "front.zip" -DestinationPath "temp_front" -Force
+     Copy-Item -Path "temp_front\ingestiaFront-master\*" -Destination "C:\inetpub\ingestiaFront" -Recurse -Force
+     Remove-Item "front.zip", "temp_front" -Recurse -Force
+     ```
+   - **Opción B (Si tienes Git instalado en el servidor)**:
+     ```powershell
+     cd C:\inetpub\ingestiaFront
+     git clone https://github.com/gsilverd2239/ingestiaFront.git .
+     ```
 
 2. **Instalar Dependencias y Compilar para Producción**:
    ```powershell
