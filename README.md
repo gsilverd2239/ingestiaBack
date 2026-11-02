@@ -331,7 +331,18 @@ nssm edit ingestiaBack
 
 ## 🔄 Procedimiento para Actualizar Versiones Futuras
 
-Cuando haya nuevas actualizaciones en GitHub:
+### Opción 1: Si tienes Git en el servidor (Recomendada)
+> [!NOTE]
+> Si la primera vez instalaste descargando el archivo `.zip`, la carpeta no tiene el directorio `.git`. Para vincularla a GitHub de forma definitiva y que `git pull` funcione siempre, ejecuta esto una sola vez:
+> ```powershell
+> cd C:\inetpub\ingestiaBack
+> git init
+> git remote add origin https://github.com/gsilverd2239/ingestiaBack.git
+> git fetch origin master
+> git reset --hard origin/master
+> ```
+
+A partir de allí, para cada actualización simplemente ejecutas:
 
 ```powershell
 # 1. Actualizar BackEnd
@@ -346,4 +357,31 @@ git pull origin master
 npm install
 npm run build
 nssm restart ingestiaFrontSvc
+```
+
+---
+
+### Opción 2: Si actualizas vía .ZIP con PowerShell (sin Git)
+
+```powershell
+# 1. Actualizar BackEnd
+nssm stop ingestiaBack
+cd C:\inetpub\ingestiaBack
+Invoke-WebRequest -Uri "https://github.com/gsilverd2239/ingestiaBack/archive/refs/heads/master.zip" -OutFile "update.zip"
+Expand-Archive -Path "update.zip" -DestinationPath "temp_update" -Force
+Copy-Item -Path "temp_update\ingestiaBack-master\*" -Destination "C:\inetpub\ingestiaBack" -Recurse -Force
+Remove-Item -Path "temp_update", "update.zip" -Recurse -Force
+npm install --omit=dev
+nssm start ingestiaBack
+
+# 2. Actualizar FrontEnd
+nssm stop ingestiaFrontSvc
+cd C:\inetpub\ingestiaFront
+Invoke-WebRequest -Uri "https://github.com/gsilverd2239/ingestiaFront/archive/refs/heads/master.zip" -OutFile "update.zip"
+Expand-Archive -Path "update.zip" -DestinationPath "temp_update" -Force
+Copy-Item -Path "temp_update\ingestiaFront-master\*" -Destination "C:\inetpub\ingestiaFront" -Recurse -Force
+Remove-Item -Path "temp_update", "update.zip" -Recurse -Force
+npm install
+npm run build
+nssm start ingestiaFrontSvc
 ```
