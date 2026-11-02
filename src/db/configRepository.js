@@ -249,7 +249,99 @@ async function deleteTemplateSLSAP(codeInstances, metodoHttpt, objectType) {
 }
 
 // ==========================================
-// 6. Runtime Configuration Loader from PostgreSQL
+// 6. TELEGRAM ALERT CONFIG & LOG CRUD
+// ==========================================
+async function getTelegramConfig() {
+  try {
+    const res = await query(`
+      SELECT id, bot_token, phone, chat_ids, alert_fallback, alert_error, is_active, updated_at
+      FROM ingestia."TELEGRAM_CONFIG"
+      ORDER BY id ASC
+      LIMIT 1
+    `);
+    if (res.rows.length === 0) {
+      const defaultInsert = await query(`
+        INSERT INTO ingestia."TELEGRAM_CONFIG" (bot_token, phone, chat_ids, alert_fallback, alert_error, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      `, ['8968844963:AAFGhL-fMfnk4JjADMlCIwFgu5TQM4jUzh8', '+595982304930', '[]', true, false, true]);
+      return defaultInsert.rows[0];
+    }
+    return res.rows[0];
+  } catch (err) {
+    logger.warn('Error leyendo TELEGRAM_CONFIG de PostgreSQL, usando valores predeterminados', { error: err.message });
+    return {
+      bot_token: '8968844963:AAFGhL-fMfnk4JjADMlCIwFgu5TQM4jUzh8',
+      phone: '+595982304930',
+      chat_ids: '[]',
+      alert_fallback: true,
+      alert_error: false,
+      is_active: true
+    };
+  }
+}
+
+async function updateTelegramConfig(data) {
+  const { bot_token, phone, chat_ids, alert_fallback, alert_error, is_active } = data;
+  const chatIdsStr = Array.isArray(chat_ids) ? JSON.stringify(chat_ids) : (typeof chat_ids === 'string' ? chat_ids : undefined);
+
+  const current = await getTelegramConfig();
+  const res = await query(`
+    UPDATE ingestia."TELEGRAM_CONFIG"
+    SET bot_token = COALESCE($1, bot_token),
+        phone = COALESCE($2, phone),
+        chat_ids = COALESCE($3, chat_ids),
+        alert_fallback = COALESCE($4, alert_fallback),
+        alert_error = COALESCE($5, alert_error),
+        is_active = COALESCE($6, is_active),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $7
+    RETURNING *
+  `, [
+    bot_token !== undefined ? bot_token : null,
+    phone !== undefined ? phone : null,
+    chatIdsStr !== undefined ? chatIdsStr : null,
+    alert_fallback !== undefined ? alert_fallback : null,
+    alert_error !== undefined ? alert_error : null,
+    is_active !== undefined ? is_active : null,
+    current.id
+  ]);
+  return res.rows[0];
+}
+
+async function logAlert(data) {
+  try {
+    const { alert_type = 'FALLBACK', event_id, object_type, entry_key, message, recipients, status = 'SENT', error = null } = data;
+    const res = await query(`
+      INSERT INTO ingestia."ALERT_LOG" (
+        alert_type, event_id, object_type, entry_key, message, recipients, status, error
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *
+    `, [alert_type, event_id || null, object_type || null, entry_key || null, message, recipients, status, error]);
+    return res.rows[0];
+  } catch (err) {
+    logger.warn('Error registrando alerta en ALERT_LOG', { error: err.message });
+    return null;
+  }
+}
+
+async function getRecentAlerts(limit = 50) {
+  try {
+    const res = await query(`
+      SELECT id, alert_type, event_id, object_type, entry_key, message, recipients, status, error, created_at
+      FROM ingestia."ALERT_LOG"
+      ORDER BY id DESC
+      LIMIT $1
+    `, [limit]);
+    return res.rows;
+  } catch (err) {
+    logger.warn('Error obteniendo alertas recientes de ALERT_LOG', { error: err.message });
+    return [];
+  }
+}
+
+// ==========================================
+// 7. Runtime Configuration Loader from PostgreSQL
 // ==========================================
 async function loadRuntimeConfig() {
   try {
@@ -258,6 +350,7 @@ async function loadRuntimeConfig() {
     const empresas = await getAllEmpresas();
     const templateEmpresas = await getAllTemplateEmpresas();
     const templateSLList = await getAllTemplateSLSAP();
+    const telegramConfig = await getTelegramConfig();
 
     if (instances.length === 0 || dbsapList.length === 0 || empresas.length === 0) {
       logger.warn('Tablas de configuración en PostgreSQL están incompletas. Verifique DBINSTANCES, DBSAP y DBEMPRESA.');
@@ -297,6 +390,7 @@ async function loadRuntimeConfig() {
         timeoutMs: primaryEmpresa.TimeOutMS || 15000,
         templates: templateEmpresas
       },
+      telegram: telegramConfig,
       templates: {
         sl: templateSLList,
         empresa: templateEmpresas
@@ -306,7 +400,8 @@ async function loadRuntimeConfig() {
         dbsapList,
         empresas,
         templateEmpresas,
-        templateSLList
+        templateSLList,
+        telegram: telegramConfig
       }
     };
   } catch (err) {
@@ -346,6 +441,12 @@ module.exports = {
   createTemplateSLSAP,
   updateTemplateSLSAP,
   deleteTemplateSLSAP,
+
+  // TELEGRAM ALERT CONFIG
+  getTelegramConfig,
+  updateTelegramConfig,
+  logAlert,
+  getRecentAlerts,
 
   // Combined Runtime Config
   loadRuntimeConfig

@@ -80,6 +80,26 @@ El motor detecta eventos desde `TBL_COMERCIA_EVENTS` en SAP HANA y ejecuta sincr
 
 ---
 
+## 📱 Sistema de Alertas por Telegram (Smart Fallback)
+
+El sistema cuenta con un motor de notificaciones en tiempo real a teléfonos móviles vía **Telegram Bot API**, enfocado en notificar inmediatamente cada vez que un evento de SAP B1 requiere **Smart Fallback** (ej. resolución de conflicto `POST 409 ➔ PUT`, registro inexistente `PUT 404 ➔ POST`, o adaptaciones en listas de precios `tbl_itm1` / direcciones `tbl_crd1`):
+
+- **Bot de Telegram**: `@GrupoGlobalZabbixBot`
+- **Token del Bot**: `8968844963:AAFGhL-fMfnk4JjADMlCIwFgu5TQM4jUzh8`
+- **Móvil Destino Inicial**: `+595982304930`
+- **Persistencia en PostgreSQL**:
+  - `ingestia."TELEGRAM_CONFIG"`: Almacena token, número móvil, chat IDs vinculados y reglas activas.
+  - `ingestia."ALERT_LOG"`: Historial completo de alertas despachadas con marca de tiempo y estado.
+
+### 📲 Cómo Vincular el Teléfono Móvil:
+1. Desde el móvil con número **`+595982304930`**, abrir Telegram.
+2. Buscar **`@GrupoGlobalZabbixBot`** (o ingresar en [t.me/GrupoGlobalZabbixBot](https://t.me/GrupoGlobalZabbixBot)).
+3. Presionar **Iniciar (Start)** o enviar cualquier mensaje (ej. `/start`).
+4. En el frontend de **ingestIA** (Pestaña *📱 Alertas Telegram*), hacer clic en **"🔄 Detectar mi Chat ID"** (o ingresar el Chat ID manualmente).
+5. Se enviará un mensaje de bienvenida de confirmación y a partir de ese momento cualquier Fallback enviará una alerta automática con el detalle del evento, clave, tipo de objeto, método aplicado y duración.
+
+---
+
 ## 🚀 PASO A PASO: Despliegue en Windows Server 2019
 
 ### Paso 1: Prerrequisitos en el Servidor

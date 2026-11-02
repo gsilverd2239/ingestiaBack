@@ -9,6 +9,7 @@ const ingestionClient = require('./ingestionClient');
 const { transformBusinessPartner, transformByObjectType } = require('./transformer');
 const { testPgConnection } = require('./db/pg');
 const configRepo = require('./db/configRepository');
+const telegramService = require('./telegramService');
 
 function createServer() {
   const app = express();
@@ -491,6 +492,89 @@ function createServer() {
   app.delete('/api/logs', (req, res) => {
     clearRecentLogs();
     res.json({ success: true, message: 'Logs en memoria limpiados' });
+  });
+
+  // 8. Telegram Alerts Management
+  app.get('/api/telegram/status', async (req, res) => {
+    try {
+      const cfg = await configRepo.getTelegramConfig();
+      const botRes = await telegramService.getBotInfo(true);
+      res.json({
+        success: true,
+        config: cfg,
+        botInfo: botRes,
+        chatIds: telegramService.parseChatIds(cfg.chat_ids),
+        phone: cfg.phone || '+595982304930'
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/telegram/config', async (req, res) => {
+    try {
+      const { bot_token, phone, chat_ids, alert_fallback, alert_error, is_active } = req.body;
+      const updated = await configRepo.updateTelegramConfig({
+        bot_token,
+        phone,
+        chat_ids,
+        alert_fallback,
+        alert_error,
+        is_active
+      });
+      res.json({ success: true, message: 'Configuración de Telegram actualizada', config: updated });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/telegram/detect-chat', async (req, res) => {
+    try {
+      const detectResult = await telegramService.detectAndRegisterChats();
+      res.json(detectResult);
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/telegram/add-chat', async (req, res) => {
+    try {
+      const { chatId } = req.body;
+      const result = await telegramService.addChatIdManually(chatId);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/telegram/remove-chat', async (req, res) => {
+    try {
+      const { chatId } = req.body;
+      const result = await telegramService.removeChatId(chatId);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post('/api/telegram/test', async (req, res) => {
+    try {
+      const { chatId } = req.body || {};
+      const testResult = await telegramService.sendTestAlert(chatId);
+      res.json(testResult);
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/telegram/alerts', async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit, 10) || 50;
+      const alerts = await configRepo.getRecentAlerts(limit);
+      res.json({ success: true, alerts });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
   });
 
   return app;

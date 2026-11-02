@@ -4,6 +4,7 @@ const ingestionClient = require('./ingestionClient');
 const { transformBusinessPartner, transformByObjectType } = require('./transformer');
 const { getConfig } = require('./config');
 const { logger } = require('./logger');
+const telegramService = require('./telegramService');
 
 class IngestionEngine {
   constructor() {
@@ -164,6 +165,24 @@ class IngestionEngine {
           timestamp: new Date().toISOString()
         };
         this.addProcessedRecord(record);
+
+        // Disparar alerta a Telegram en segundo plano si ocurrió un Fallback
+        if (record.wasFallback) {
+          logger.warn(`[Fallback Detectado] Evento ${EventID} (${EntryKey}) usó fallback: ${record.method}. Enviando alerta a Telegram...`);
+          telegramService.sendFallbackAlert({
+            eventId: EventID,
+            objectType: objectTypeStr,
+            entryKey: EntryKey,
+            action: Action,
+            method: record.method,
+            durationMs: record.durationMs,
+            statusCode: record.statusCode,
+            details: ingestRes.fallbackDetails || null
+          }).catch(alertErr => {
+            logger.warn(`Error enviando alerta Telegram para Evento ${EventID}: ${alertErr.message}`);
+          });
+        }
+
         if (isObjectType2) {
           logger.info(`Evento ${EventID} (ObjectType=2 [OCRD+CRD1], Action=${Action}) procesado exitosamente: tbl_ocrd (${ingestRes.method}), ${ingestRes.crd1Count || 0} direcciones sincronizadas en tbl_crd1.`);
         } else if (isObjectType4) {
@@ -185,6 +204,7 @@ class IngestionEngine {
         };
         this.addProcessedRecord(record);
         logger.error(`Fallo en Ingestión API para Evento ${EventID}: ${record.error}`);
+        telegramService.sendErrorAlert(record).catch(() => {});
       }
     } catch (err) {
       this.stats.totalFailed++;
@@ -200,6 +220,7 @@ class IngestionEngine {
       };
       this.addProcessedRecord(record);
       logger.error(`Error procesando EventID ${EventID}`, { error: err.message });
+      telegramService.sendErrorAlert(record).catch(() => {});
     }
   }
 

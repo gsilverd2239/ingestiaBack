@@ -216,6 +216,11 @@ class IngestionClient {
 
       const settledPrices = (await Promise.all(pricePromises)).filter(Boolean);
       const durationMs = Date.now() - startTime;
+      const hadLineFallback = settledPrices.some(r => r && r.method && r.method.includes('fallback'));
+      const isOverallFallback = wasFallback || hadLineFallback;
+      const fallbackDetails = wasFallback
+        ? (hadLineFallback ? 'Cabecera OITM y listas ITM1 ajustadas con Fallback' : `Cabecera OITM ajustada con Fallback (${oitmMethod})`)
+        : (hadLineFallback ? 'Una o más listas de precios ITM1 ajustadas con Fallback' : null);
 
       logger.info(`[ObjectType 4 - ENDURO] Sincronización exitosa (${durationMs}ms) para ${itemCode}. tbl_oitm OK (${oitmMethod}), tbl_itm1 sincronizadas: ${settledPrices.filter(r => r.status).length}`);
 
@@ -224,7 +229,8 @@ class IngestionClient {
         method: oitmMethod,
         statusCode: oitmRes?.status || 200,
         durationMs,
-        wasFallback,
+        wasFallback: isOverallFallback,
+        fallbackDetails,
         url: oitmUrl,
         oitm: oitmPayload,
         itm1Count: settledPrices.filter(r => r.status).length,
@@ -394,6 +400,11 @@ class IngestionClient {
 
       const settledAddresses = (await Promise.all(addressPromises)).filter(Boolean);
       const durationMs = Date.now() - startTime;
+      const hadLineFallback = settledAddresses.some(r => r && r.method && r.method.includes('fallback'));
+      const isOverallFallback = wasFallback || hadLineFallback;
+      const fallbackDetails = wasFallback
+        ? (hadLineFallback ? 'Cabecera OCRD y direcciones CRD1 ajustadas con Fallback' : `Cabecera OCRD ajustada con Fallback (${ocrdMethod})`)
+        : (hadLineFallback ? 'Una o más direcciones CRD1 ajustadas con Fallback' : null);
 
       logger.info(`[ObjectType 2 - ENDURO] Sincronización exitosa (${durationMs}ms) para ${cardCode}. tbl_ocrd OK (${ocrdMethod}), tbl_crd1 sincronizadas: ${settledAddresses.filter(r => r.status).length}`);
 
@@ -402,7 +413,8 @@ class IngestionClient {
         method: ocrdMethod,
         statusCode: ocrdRes?.status || 200,
         durationMs,
-        wasFallback,
+        wasFallback: isOverallFallback,
+        fallbackDetails,
         url: ocrdUrl,
         ocrd: ocrdPayload,
         crd1Count: settledAddresses.filter(r => r.status).length,
@@ -548,7 +560,8 @@ class IngestionClient {
             durationMs: fbDuration,
             data: fallbackRes.data,
             url: fallbackUrl,
-            wasFallback: true
+            wasFallback: true,
+            fallbackDetails: `Registro ${recordKey} ya existía (409 Conflict). Se aplicó PUT como fallback.`
           };
         } catch (fbErr) {
           logger.error(`Falló también la actualización alternativa para ${recordKey}`, { error: fbErr.message });
@@ -576,7 +589,8 @@ class IngestionClient {
             durationMs: fbDuration,
             data: fallbackRes.data,
             url: fallbackUrl,
-            wasFallback: true
+            wasFallback: true,
+            fallbackDetails: `Registro ${recordKey} no encontrado (404 Not Found). Se aplicó POST como fallback.`
           };
         } catch (fbErr) {
           logger.error(`Falló también la inserción alternativa para ${recordKey}`, { error: fbErr.message });
