@@ -376,6 +376,7 @@ function createServer() {
       const isCanal = String(objectType).toUpperCase() === 'JCANAL' || String(objectType).toUpperCase() === 'JCALES';
       const isPriceList = String(objectType) === '6' || String(objectType).toUpperCase() === 'OPLN';
       const isItemGroup = String(objectType) === '52' || String(objectType).toUpperCase() === 'OITB';
+      const isAgent = String(objectType) === '177' || String(objectType).toUpperCase() === 'OAGP';
       res.json({
         success: true,
         cardCode,
@@ -408,6 +409,10 @@ function createServer() {
         } : isItemGroup ? {
           Number: sapRaw.Number,
           GroupName: sapRaw.GroupName
+        } : isAgent ? {
+          AgentCode: (sapRaw?.value?.[0] || sapRaw)?.AgentCode,
+          AgentName: (sapRaw?.value?.[0] || sapRaw)?.AgentName,
+          Memo: (sapRaw?.value?.[0] || sapRaw)?.Memo
         } : {
           CardCode: sapRaw.CardCode,
           CardName: sapRaw.CardName,

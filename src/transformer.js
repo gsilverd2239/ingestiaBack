@@ -217,6 +217,8 @@ function transformItemGroup(data) {
 
 /**
  * Intelligent transformer using BodyTemplate from PostgreSQL configuration
+/**
+ * Intelligent transformer using BodyTemplate from PostgreSQL configuration
  * Ensures data types match the template (e.g., numeric Code, boolean, string)
  */
 function transformByTemplate(rawData, bodyTemplate) {
@@ -224,13 +226,24 @@ function transformByTemplate(rawData, bodyTemplate) {
     return rawData;
   }
 
+  // 1. Unwrap OData collection or SQLQueryResult { value: [ ... ] } or array [ ... ]
+  let source = rawData;
+  if (rawData && rawData.value && Array.isArray(rawData.value)) {
+    source = rawData.value[0] || {};
+  } else if (Array.isArray(rawData)) {
+    source = rawData[0] || {};
+  }
+
   const ALIASES = {
     listnum: ['pricelistno', 'pricelistnum', 'listnum'],
     listname: ['pricelistname', 'listname'],
     number: ['number', 'itmsgrpcod', 'groupcode', 'code'],
     groupname: ['groupname', 'itmsgrpnam', 'name', 'descr', 'description'],
-    code: ['code', 'docentry', 'number'],
-    name: ['name', 'descr', 'description', 'groupname']
+    code: ['code', 'docentry', 'number', 'agentcode', 'groupnumber'],
+    name: ['name', 'descr', 'description', 'groupname', 'agentname', 'paymenttermsgroupname'],
+    agentcode: ['agentcode', 'code', 'number', 'id', 'entrykey'],
+    agentname: ['agentname', 'name', 'descr', 'description'],
+    memo: ['memo', 'description', 'comments']
   };
 
   const result = {};
@@ -239,23 +252,28 @@ function transformByTemplate(rawData, bodyTemplate) {
     const keyLower = key.toLowerCase();
     const candidateKeys = ALIASES[keyLower] || [keyLower];
 
-    // Find matching key in rawData (case-insensitive and alias-aware)
-    const rawKey = Object.keys(rawData).find(k => candidateKeys.includes(k.toLowerCase()));
-    const val = rawKey ? rawData[rawKey] : undefined;
+    // Find matching key in source (case-insensitive and alias-aware)
+    const rawKey = Object.keys(source).find(k => candidateKeys.includes(k.toLowerCase()));
+    const val = rawKey ? source[rawKey] : undefined;
 
     if (val === undefined || val === null) {
-      result[key] = sampleVal;
+      // Avoid injecting dummy template placeholder text into real payloads
+      if (typeof sampleVal === 'string' && /ejemplo|zona centro|sup01|test/i.test(sampleVal)) {
+        result[key] = '';
+      } else {
+        result[key] = sampleVal;
+      }
       continue;
     }
 
     // Type coercion matching sampleVal in bodyTemplate
     if (typeof sampleVal === 'number') {
       const num = Number(val);
-      result[key] = isNaN(num) ? sampleVal : (Number.isInteger(sampleVal) ? Math.round(num) : num);
+      result[key] = isNaN(num) ? 0 : (Number.isInteger(sampleVal) ? Math.round(num) : num);
     } else if (typeof sampleVal === 'boolean') {
       result[key] = toYesNo(val) === 'Y';
     } else if (typeof sampleVal === 'string') {
-      result[key] = String(val);
+      result[key] = String(val).trim();
     } else {
       result[key] = val;
     }
@@ -280,11 +298,32 @@ function transformByTemplate(rawData, bodyTemplate) {
 }
 
 /**
+ * Transforms Agent (OAGP - ObjectType 177) data from Service Layer
+ * @param {Object} data - Service Layer SQLQueryResult or entity object
+ * @returns {Object} Target payload { AgentCode, AgentName, Memo }
+ */
+function transformAgent(data) {
+  let source = data;
+  if (data && data.value && Array.isArray(data.value)) {
+    source = data.value[0] || {};
+  } else if (Array.isArray(data)) {
+    source = data[0] || {};
+  }
+
+  return {
+    AgentCode: String(source.AgentCode ?? source.Code ?? source.EntryKey ?? '').trim(),
+    AgentName: String(source.AgentName ?? source.Name ?? source.AgentCode ?? '').trim(),
+    Memo: toStringOrNull(source.Memo ?? source.Description ?? '') || ''
+  };
+}
+
+/**
  * Extensible dispatcher for different SAP ObjectTypes
  * '2' = OCRD (Socios de Negocios)
  * '4' = OITM (Artículos)
  * '6' = OPLN (Listas de Precios)
  * '52' = OITB (Grupos de Artículos)
+ * '177' = OAGP (Agentes de Venta / Routing Agents)
  * 'JCANAL' / 'JCALES' = Canales de Venta
  */
 function transformByObjectType(objectType, rawData, bodyTemplate = null) {
@@ -308,6 +347,11 @@ function transformByObjectType(objectType, rawData, bodyTemplate = null) {
     case 'ITEMGROUPS':
     case 'ITEMGROUP':
       return transformItemGroup(rawData);
+    case '177':
+    case 'OAGP':
+    case 'AGENTS':
+    case 'AGENT':
+      return transformAgent(rawData);
     case 'JCANAL':
     case 'JCALES':
     case 'TBL_JCANALES':
@@ -328,6 +372,7 @@ module.exports = {
   transformItem,
   transformPriceList,
   transformItemGroup,
+  transformAgent,
   transformJCanal,
   transformByTemplate,
   transformByObjectType,

@@ -129,12 +129,13 @@ class ServiceLayerClient {
       endpointPattern = template.EndPoint;
     }
 
-    const safeKey = encodeURIComponent(String(entryKey).replace(/'/g, "''"));
+    const cleanKey = String(entryKey || '').trim();
+    const safeKey = encodeURIComponent(cleanKey.replace(/'/g, "''"));
     let path = endpointPattern
-      .replace(/\{(EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry)\}/gi, safeKey)
-      .replace(/\(['"]?(EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry)['"]?\)/gi, `('${safeKey}')`)
-      .replace(/['"](EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry)['"]/gi, `'${safeKey}'`)
-      .replace(/\/(EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry)$/gi, `/${safeKey}`)
+      .replace(/\{(EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry|AgentCode|AgentName)\}/gi, safeKey)
+      .replace(/\(['"]?(EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry|AgentCode|AgentName)['"]?\)/gi, `('${safeKey}')`)
+      .replace(/['"](EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry|AgentCode|AgentName)['"]/gi, `'${safeKey}'`)
+      .replace(/\/(EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry|AgentCode|AgentName)$/gi, `/${safeKey}`)
       .replace(/\{[a-zA-Z0-9_-]+\}/g, safeKey);
 
     const url = `${config.baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;

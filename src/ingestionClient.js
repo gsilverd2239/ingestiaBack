@@ -25,14 +25,15 @@ class IngestionClient {
 
     let path = '';
     if (template && template.EndPoint) {
-      const safeKey = encodeURIComponent(String(cardCode).replace(/'/g, "''"));
+      const cleanKey = String(cardCode || '').trim();
+      const safeKey = encodeURIComponent(cleanKey.replace(/'/g, "''"));
       let endpoint = template.EndPoint
         .replace(/\{IdEmpresa\}/gi, encodeURIComponent(empresaId))
         .replace(/\{empresaId\}/gi, encodeURIComponent(empresaId))
-        .replace(/\{(EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry)\}/gi, safeKey)
-        .replace(/\(['"]?(EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry)['"]?\)/gi, `('${safeKey}')`)
-        .replace(/['"](EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry)['"]/gi, `'${safeKey}'`)
-        .replace(/\/(EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry)$/gi, `/${safeKey}`)
+        .replace(/\{(EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry|AgentCode|AgentName)\}/gi, safeKey)
+        .replace(/\(['"]?(EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry|AgentCode|AgentName)['"]?\)/gi, `('${safeKey}')`)
+        .replace(/['"](EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry|AgentCode|AgentName)['"]/gi, `'${safeKey}'`)
+        .replace(/\/(EntryKey|CardCode|ItemCode|Code|ListNum|Number|ItmsGrpCod|GroupCode|DocNum|AbsEntry|Key|Id|DocEntry|AgentCode|AgentName)$/gi, `/${safeKey}`)
         .replace(/\{[a-zA-Z0-9_-]+\}/g, safeKey);
 
       if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
@@ -451,9 +452,10 @@ class IngestionClient {
       return await this.sendItemWithPrices(rawData || payload, action);
     }
 
-    const recordKey = entryKey || payload?.CardCode || payload?.ItemCode || payload?.Code || payload?.ListNum || payload?.Number || payload?.ItmsGrpCod || payload?.EntryKey || payload?.Id || '';
+    const rawKey = entryKey || payload?.CardCode || payload?.ItemCode || payload?.Code || payload?.ListNum || payload?.Number || payload?.ItmsGrpCod || payload?.AgentCode || payload?.EntryKey || payload?.Id || '';
+    const recordKey = String(rawKey || '').trim();
     if (!payload || !recordKey) {
-      throw new Error('Payload inválido: CardCode, ItemCode, Code, ListNum o Number es requerido.');
+      throw new Error('Payload inválido: CardCode, ItemCode, Code, ListNum, Number o AgentCode es requerido.');
     }
 
     const config = this.getConfig();

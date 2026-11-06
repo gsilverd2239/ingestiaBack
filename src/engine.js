@@ -109,13 +109,14 @@ class IngestionEngine {
   async processEvent(event) {
     const { EventID, ObjectType, EntryKey, Action } = event;
     const objectTypeStr = String(ObjectType).trim();
+    const entryKeyClean = String(EntryKey || '').trim();
     const startTime = Date.now();
 
-    logger.info(`Procesando EventID=${EventID} | ObjectType=${objectTypeStr} | EntryKey=${EntryKey} | Action=${Action}`);
+    logger.info(`Procesando EventID=${EventID} | ObjectType=${objectTypeStr} | EntryKey=${entryKeyClean} | Action=${Action}`);
 
     try {
       // 1. Fetch from SAP B1 Service Layer using dynamic template for ObjectType
-      const rawData = await serviceLayerClient.getObjectByTemplate(objectTypeStr, EntryKey);
+      const rawData = await serviceLayerClient.getObjectByTemplate(objectTypeStr, entryKeyClean);
 
       let ingestRes;
       const isObjectType2 = objectTypeStr === '2' || objectTypeStr.toUpperCase() === 'OCRD' || objectTypeStr.toUpperCase() === 'BUSINESSPARTNERS';
@@ -123,11 +124,11 @@ class IngestionEngine {
 
       if (isObjectType2) {
         // ENDURO: Para ObjectType 2 (OCRD), sincronizar directamente tbl_ocrd y tbl_crd1 en código sin consultar TEMPLATEEMPRESA de PostgreSQL
-        logger.info(`[ObjectType 2 - ENDURO] Procesando OCRD y CRD1 directamente en código para EntryKey=${EntryKey} (Action=${Action})...`);
+        logger.info(`[ObjectType 2 - ENDURO] Procesando OCRD y CRD1 directamente en código para EntryKey=${entryKeyClean} (Action=${Action})...`);
         ingestRes = await ingestionClient.sendBusinessPartnerWithAddresses(rawData, Action);
       } else if (isObjectType4) {
         // ENDURO: Para ObjectType 4 (OITM), sincronizar directamente tbl_oitm y tbl_itm1 en código sin consultar TEMPLATEEMPRESA de PostgreSQL
-        logger.info(`[ObjectType 4 - ENDURO] Procesando OITM e ITM1 directamente en código para EntryKey=${EntryKey} (Action=${Action})...`);
+        logger.info(`[ObjectType 4 - ENDURO] Procesando OITM e ITM1 directamente en código para EntryKey=${entryKeyClean} (Action=${Action})...`);
         ingestRes = await ingestionClient.sendItemWithPrices(rawData, Action);
       } else {
         // Find template for BodyTemplate shape matching if needed
@@ -144,7 +145,7 @@ class IngestionEngine {
         const transformedPayload = transformByObjectType(objectTypeStr, rawData, empTemplate?.BodyTemplate);
 
         // 3. Send to Ingestion API (POST if Action === 'A', PUT if Action === 'U') using ObjectType template
-        ingestRes = await ingestionClient.sendPayload(transformedPayload, Action, objectTypeStr, EntryKey, rawData);
+        ingestRes = await ingestionClient.sendPayload(transformedPayload, Action, objectTypeStr, entryKeyClean, rawData);
       }
 
       if (ingestRes.success) {
@@ -155,7 +156,7 @@ class IngestionEngine {
         const record = {
           eventId: EventID,
           objectType: objectTypeStr,
-          entryKey: EntryKey,
+          entryKey: entryKeyClean,
           action: Action,
           method: ingestRes.method || (String(Action).toUpperCase() === 'A' ? 'POST' : 'PUT'),
           status: 'SUCCESS',
@@ -168,11 +169,11 @@ class IngestionEngine {
 
         // Disparar alerta a Telegram en segundo plano si ocurrió un Fallback
         if (record.wasFallback) {
-          logger.warn(`[Fallback Detectado] Evento ${EventID} (${EntryKey}) usó fallback: ${record.method}. Enviando alerta a Telegram...`);
+          logger.warn(`[Fallback Detectado] Evento ${EventID} (${entryKeyClean}) usó fallback: ${record.method}. Enviando alerta a Telegram...`);
           telegramService.sendFallbackAlert({
             eventId: EventID,
             objectType: objectTypeStr,
-            entryKey: EntryKey,
+            entryKey: entryKeyClean,
             action: Action,
             method: record.method,
             durationMs: record.durationMs,
@@ -195,7 +196,7 @@ class IngestionEngine {
         const record = {
           eventId: EventID,
           objectType: objectTypeStr,
-          entryKey: EntryKey,
+          entryKey: entryKeyClean,
           action: Action,
           status: 'FAILED',
           error: ingestRes.error || `HTTP ${ingestRes.statusCode}`,
