@@ -60,7 +60,7 @@ El motor detecta eventos desde `TBL_COMERCIA_EVENTS` en SAP HANA y ejecuta sincr
 - **Cabecera `tbl_oitm`**:
   - `POST /catalogo/empresas/{empresaId}/tbl_oitm` (si `Action = 'A'`) con fallback a `PUT`.
   - `PUT /catalogo/empresas/{empresaId}/tbl_oitm/{ItemCode}` (si `Action = 'U'`) con fallback a `POST`.
-  - Mapeo exacto de campos: `DfltWH`, `ItemCode`, `ItemName`, `SWeight1`, `validFor`, `TaxCodeAR`, `U_ItemQty` (entero), `U_beas_vg` (string), `frozenFor`, `ItmsGrpCod`, `QryInventario`.
+  - Mapeo exacto de campos: `DfltWH`, `ItemCode`, `ItemName`, `SWeight1`, `validFor` (Y/N o tYES/tNO), `TaxCodeAR`, `U_ItemQty` (entero), `U_beas_vg` (string), `frozenFor` (Y/N o tYES/tNO), `ItmsGrpCod`, `QryInventario` (mapeado desde `Properties3` en Service Layer o `QryGroup3` en HANA, compatible con 'Y'/'N' y 'tYES'/'tNO').
 - **Listas de Precios `tbl_itm1`**:
   - Recorre en paralelo las listas del array `ItemPrices`.
   - Formatea precios obligatoriamente con 6 decimales (`Price: "95000.000000"`).

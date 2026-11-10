@@ -350,7 +350,15 @@ function createServer() {
           ingestionResult = await ingestionClient.sendBusinessPartnerWithAddresses(sapRaw, action);
         }
       } else if (isItem) {
-        transformedPayload = transformByObjectType('4', sapRaw);
+        const rootConfig = getConfig();
+        const isAdd = String(action).toUpperCase() === 'A';
+        const method = isAdd ? 'POST' : 'PUT';
+        const empresaTemplates = rootConfig.templates?.empresa || rootConfig.ingestion?.templates || [];
+        const empTemplate = empresaTemplates.find(t => 
+          String(t.ObjectType || '').trim().toUpperCase() === '4' && 
+          String(t.MetodoHttpt || '').toUpperCase() === method
+        );
+        transformedPayload = transformByObjectType('4', sapRaw, empTemplate?.BodyTemplate);
         if (sendToIngest) {
           ingestionResult = await ingestionClient.sendItemWithPrices(sapRaw, action);
         }
@@ -392,6 +400,7 @@ function createServer() {
           DefaultWarehouse: sapRaw.DefaultWarehouse,
           Valid: sapRaw.Valid,
           Frozen: sapRaw.Frozen,
+          Properties3: sapRaw.Properties3 ?? sapRaw.QryGroup3,
           InventoryItem: sapRaw.InventoryItem,
           U_ItemQty: sapRaw.U_ItemQty,
           U_beas_vg: sapRaw.U_beas_vg,

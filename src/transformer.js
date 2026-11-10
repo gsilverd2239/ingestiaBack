@@ -3,11 +3,37 @@
  * into the required Ingestion API payloads.
  */
 
-function toYesNo(val) {
-  if (val === undefined || val === null) return 'N';
+/**
+ * Normalizes boolean/yes-no values.
+ * Supports SAP Service Layer enums ('tYES', 'tNO'), standard DB flags ('Y', 'N'),
+ * boolean true/false, numbers (1/0), and Spanish variations ('S', 'TSI').
+ * 
+ * @param {*} val - Input value to normalize
+ * @param {string} [format='Y_N'] - Output format: 'Y_N' ('Y'/'N') or 'tYES'/'tNO' ('tYES'/'tNO')
+ * @returns {string} Normalized string
+ */
+function toYesNo(val, format = 'Y_N') {
+  const isTFormat = (
+    String(format).toUpperCase() === 'TYES' || 
+    String(format).toUpperCase() === 'TNO' || 
+    String(format).toUpperCase() === 'TYES_TNO'
+  );
+
+  if (val === undefined || val === null) {
+    return isTFormat ? 'tNO' : 'N';
+  }
+
   const str = String(val).trim().toUpperCase();
-  if (str === 'TYES' || str === 'Y' || str === 'TRUE' || str === '1' || str === 'S' || str === 'TSI') return 'Y';
-  return 'N';
+  const isYes = (str === 'TYES' || str === 'Y' || str === 'TRUE' || str === '1' || str === 'S' || str === 'TSI');
+
+  if (isTFormat) {
+    return isYes ? 'tYES' : 'tNO';
+  }
+  return isYes ? 'Y' : 'N';
+}
+
+function toTYesNo(val) {
+  return toYesNo(val, 'tYES');
 }
 
 function toStringOrNull(val) {
@@ -101,11 +127,28 @@ function transformAddress(cardCode, addr) {
 /**
  * Transforms Items Service Layer object into Ingestion OITM payload
  * @param {Object} item - SAP B1 Items Service Layer JSON object
+ * @param {Object} [options={}] - Options or bodyTemplate (supports booleanFormat: 'Y_N' | 'tYES')
  * @returns {Object} Target ingestion payload
  */
-function transformItem(item) {
+function transformItem(item, options = {}) {
   if (!item) {
     throw new Error('Item data is null or empty');
+  }
+
+  // Detect requested boolean format: 'Y_N' (default, currently required by Ingestion API varchar(1))
+  // or 'tYES' if requested in options or bodyTemplate
+  let boolFormat = 'Y_N';
+  if (options && typeof options === 'object') {
+    if (options.booleanFormat) {
+      boolFormat = options.booleanFormat;
+    } else if (options.useTYesNo) {
+      boolFormat = 'tYES';
+    } else if (
+      String(options.validFor || options.valid || '').toUpperCase() === 'TYES' ||
+      String(options.QryInventario || '').toUpperCase() === 'TYES'
+    ) {
+      boolFormat = 'tYES';
+    }
   }
 
   let taxCode = 10;
@@ -134,18 +177,25 @@ function transformItem(item) {
     if (strVg) beasVg = strVg;
   }
 
+  // Mapeo Properties3 en SAP Service Layer / QryGroup3 en HANA -> QryInventario en Ingestion API
+  // Soporta tanto 'tYES'/'tNO' como 'Y'/'N'
+  const rawQryInventario = item.Properties3 ?? item.properties3 ?? item.Properties_3 ?? item.QryGroup3 ?? item.qrygroup3 ?? item.QryInventario ?? item.qryinventario;
+  const finalQryInventario = (rawQryInventario !== undefined && rawQryInventario !== null)
+    ? rawQryInventario
+    : (item.InventoryItem ?? 'Y');
+
   return {
     DfltWH: toStringOrNull(item.DefaultWarehouse ?? item.DfltWH) || '01',
-    ItemCode: String(item.ItemCode || ''),
-    ItemName: String(item.ItemName || ''),
+    ItemCode: String(item.ItemCode || '').trim(),
+    ItemName: String(item.ItemName || '').trim(),
     SWeight1: Number(weight).toFixed(6),
-    validFor: toYesNo(item.Valid ?? item.validFor),
+    validFor: toYesNo(item.Valid ?? item.validFor ?? item.validfor ?? item.valid ?? 'Y', boolFormat),
     TaxCodeAR: taxCode,
     U_ItemQty: itemQty,
     U_beas_vg: beasVg,
-    frozenFor: toYesNo(item.Frozen ?? item.frozenFor),
+    frozenFor: toYesNo(item.Frozen ?? item.frozenFor ?? item.frozenfor ?? item.frozen ?? 'N', boolFormat),
     ItmsGrpCod: toNumberOrNull(item.ItemsGroupCode ?? item.ItmsGrpCod) || 100,
-    QryInventario: toYesNo(item.InventoryItem ?? item.QryInventario ?? 'Y')
+    QryInventario: toYesNo(finalQryInventario, boolFormat)
   };
 }
 
@@ -243,7 +293,10 @@ function transformByTemplate(rawData, bodyTemplate) {
     name: ['name', 'descr', 'description', 'groupname', 'agentname', 'paymenttermsgroupname'],
     agentcode: ['agentcode', 'code', 'number', 'id', 'entrykey'],
     agentname: ['agentname', 'name', 'descr', 'description'],
-    memo: ['memo', 'description', 'comments']
+    memo: ['memo', 'description', 'comments'],
+    qryinventario: ['properties3', 'properties_3', 'qrygroup3', 'qryinventario', 'inventoryitem'],
+    validfor: ['valid', 'validfor'],
+    frozenfor: ['frozen', 'frozenfor']
   };
 
   const result = {};
@@ -273,7 +326,14 @@ function transformByTemplate(rawData, bodyTemplate) {
     } else if (typeof sampleVal === 'boolean') {
       result[key] = toYesNo(val) === 'Y';
     } else if (typeof sampleVal === 'string') {
-      result[key] = String(val).trim();
+      const sampleTrim = sampleVal.trim();
+      if (/^t(yes|no)$/i.test(sampleTrim)) {
+        result[key] = toYesNo(val, 'tYES');
+      } else if (/^[yn]$/i.test(sampleTrim) && /^(validfor|frozenfor|qryinventario|qrylunes|qrymartes|qrymiercoles|qryjueves|qryviernes)$/i.test(keyLower)) {
+        result[key] = toYesNo(val, 'Y_N');
+      } else {
+        result[key] = String(val).trim();
+      }
     } else {
       result[key] = val;
     }
@@ -336,7 +396,7 @@ function transformByObjectType(objectType, rawData, bodyTemplate = null) {
     case '4':
     case 'OITM':
     case 'ITEMS':
-      return transformItem(rawData);
+      return transformItem(rawData, bodyTemplate);
     case '6':
     case 'OPLN':
     case 'PRICELISTS':
@@ -377,5 +437,6 @@ module.exports = {
   transformByTemplate,
   transformByObjectType,
   toYesNo,
+  toTYesNo,
   mapCardType
 };

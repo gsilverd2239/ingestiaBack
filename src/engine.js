@@ -127,9 +127,17 @@ class IngestionEngine {
         logger.info(`[ObjectType 2 - ENDURO] Procesando OCRD y CRD1 directamente en código para EntryKey=${entryKeyClean} (Action=${Action})...`);
         ingestRes = await ingestionClient.sendBusinessPartnerWithAddresses(rawData, Action);
       } else if (isObjectType4) {
-        // ENDURO: Para ObjectType 4 (OITM), sincronizar directamente tbl_oitm y tbl_itm1 en código sin consultar TEMPLATEEMPRESA de PostgreSQL
+        // ENDURO: Para ObjectType 4 (OITM), sincronizar directamente tbl_oitm y tbl_itm1 en código
+        const rootConfig = getConfig();
+        const isAdd = String(Action).toUpperCase() === 'A';
+        const method = isAdd ? 'POST' : 'PUT';
+        const empresaTemplates = rootConfig.templates?.empresa || rootConfig.ingestion?.templates || [];
+        const empTemplate = empresaTemplates.find(t => 
+          String(t.ObjectType || '').trim().toUpperCase() === '4' && 
+          String(t.MetodoHttpt || '').toUpperCase() === method
+        );
         logger.info(`[ObjectType 4 - ENDURO] Procesando OITM e ITM1 directamente en código para EntryKey=${entryKeyClean} (Action=${Action})...`);
-        ingestRes = await ingestionClient.sendItemWithPrices(rawData, Action);
+        ingestRes = await ingestionClient.sendItemWithPrices(rawData, Action, empTemplate?.BodyTemplate);
       } else {
         // Find template for BodyTemplate shape matching if needed
         const rootConfig = getConfig();

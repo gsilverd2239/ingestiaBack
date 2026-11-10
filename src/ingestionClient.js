@@ -67,7 +67,7 @@ class IngestionClient {
    * 1. Cabecera del Artículo -> tbl_oitm (POST para 'A', PUT para 'U', con smart fallback)
    * 2. Lista de Precios -> tbl_itm1 (POST para 'A', PUT para 'U', con smart fallback por cada PriceList)
    */
-  async sendItemWithPrices(sapRawItem, action = 'U') {
+  async sendItemWithPrices(sapRawItem, action = 'U', options = {}) {
     const rootConfig = getConfig();
     const config = rootConfig.ingestion || {};
     const empresaId = config.empresaId || 2;
@@ -88,7 +88,7 @@ class IngestionClient {
 
     try {
       // 1. Cabecera OITM
-      const oitmPayload = transformItem(sapRawItem);
+      const oitmPayload = transformItem(sapRawItem, options);
       const oitmPostUrl = `${baseUrl}/catalogo/empresas/${encodeURIComponent(empresaId)}/tbl_oitm`;
       const oitmPutUrl = `${baseUrl}/catalogo/empresas/${encodeURIComponent(empresaId)}/tbl_oitm/${encodeURIComponent(itemCode)}`;
 
