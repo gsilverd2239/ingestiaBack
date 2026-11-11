@@ -235,7 +235,7 @@ class IngestionEngine {
 
   addProcessedRecord(record) {
     this.recentProcessedEvents.push(record);
-    if (this.recentProcessedEvents.length > 50) {
+    if (this.recentProcessedEvents.length > 500) {
       this.recentProcessedEvents.shift();
     }
   }

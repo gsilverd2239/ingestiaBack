@@ -455,7 +455,7 @@ function createServer() {
 
   // 6. Events Explorer
   app.get('/api/events', async (req, res) => {
-    const limit = parseInt(req.query.limit, 10) || 50;
+    const limit = parseInt(req.query.limit, 10) || 200;
     const filter = req.query.filter || 'all'; // all | pending | processed
 
     try {
@@ -492,7 +492,7 @@ function createServer() {
 
   // 7. Recent Executions & Memory Logs
   app.get('/api/recent-executions', (req, res) => {
-    const limit = parseInt(req.query.limit, 10) || 25;
+    const limit = parseInt(req.query.limit, 10) || 500;
     res.json({ success: true, records: engine.getRecentProcessedEvents(limit) });
   });
 
@@ -553,8 +553,8 @@ function createServer() {
 
   app.post('/api/telegram/add-chat', async (req, res) => {
     try {
-      const { chatId } = req.body;
-      const result = await telegramService.addChatIdManually(chatId);
+      const { chatId, alias } = req.body;
+      const result = await telegramService.addChatIdManually(chatId, alias);
       res.json(result);
     } catch (err) {
       res.status(500).json({ success: false, error: err.message });

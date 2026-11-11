@@ -54,22 +54,36 @@ class TelegramService {
   }
 
   /**
-   * Parsea los chat_ids guardados en BD (array o string JSON)
+   * Parsea los chat_ids guardados en BD (array o string JSON o CSV)
    */
   parseChatIds(chatIdsRaw) {
     if (!chatIdsRaw) return [];
-    if (Array.isArray(chatIdsRaw)) return chatIdsRaw;
+    if (Array.isArray(chatIdsRaw)) {
+      return chatIdsRaw.map(item => {
+        if (typeof item === 'object' && item !== null && item.id) return String(item.id).trim();
+        return String(item).trim();
+      }).filter(Boolean);
+    }
     try {
       const parsed = JSON.parse(chatIdsRaw);
-      return Array.isArray(parsed) ? parsed : [parsed];
+      if (Array.isArray(parsed)) {
+        return parsed.map(item => {
+          if (typeof item === 'object' && item !== null && item.id) return String(item.id).trim();
+          return String(item).trim();
+        }).filter(Boolean);
+      }
+      if (typeof parsed === 'object' && parsed !== null && parsed.id) {
+        return [String(parsed.id).trim()];
+      }
+      return [String(parsed).trim()];
     } catch (e) {
       return String(chatIdsRaw).split(',').map(s => s.trim()).filter(Boolean);
     }
   }
 
   /**
-   * Consulta getUpdates de Telegram para detectar usuarios que enviaron /start o mensajes al bot.
-   * Si encuentra nuevos chat_id, los registra en BD y les envía un mensaje de bienvenida.
+   * Consulta getUpdates de Telegram para detectar usuarios o grupos (como ZabbixAlert)
+   * Si encuentra nuevos chat_id, los registra en BD y les envía confirmación.
    */
   async detectAndRegisterChats() {
     const cfg = await this.getConfig();
@@ -84,7 +98,7 @@ class TelegramService {
         return {
           success: true,
           newChatsCount: 0,
-          message: 'No se encontraron nuevos mensajes en el bot. Abra Telegram, busque @' + (this.cachedBotInfo?.username || 'GrupoGlobalZabbixBot') + ' y presione Iniciar o escriba un mensaje.',
+          message: 'No se encontraron nuevos mensajes en el bot. En el grupo ZabbixAlert o en tu chat privado, escribe /start o @' + (this.cachedBotInfo?.username || 'GrupoGlobalZabbixBot') + ' y presiona Detectar de nuevo.',
           chatIds: this.parseChatIds(cfg.chat_ids)
         };
       }
@@ -99,14 +113,15 @@ class TelegramService {
         if (!chat || !chat.id) continue;
 
         const chatIdStr = String(chat.id);
-        const userName = chat.username ? `@${chat.username}` : (chat.first_name || 'Usuario');
+        const isGroup = chatIdStr.startsWith('-') || chat.type === 'group' || chat.type === 'supergroup';
+        const chatName = chat.title || (chat.username ? `@${chat.username}` : (chat.first_name ? `${chat.first_name} ${chat.last_name || ''}`.trim() : (isGroup ? 'Grupo ZabbixAlert' : 'Usuario')));
         const userPhone = msg.contact?.phone_number || null;
 
         if (!discoveredChats.some(c => c.id === chatIdStr)) {
           discoveredChats.push({
             id: chatIdStr,
-            name: userName,
-            type: chat.type,
+            name: chatName,
+            type: chat.type || (isGroup ? 'group' : 'private'),
             phone: userPhone,
             lastMessage: msg.text || null
           });
@@ -119,7 +134,7 @@ class TelegramService {
           currentChatIds.push(discovered.id);
           newlyAdded.push(discovered);
 
-          // Enviar confirmación de bienvenida inmediata al chat detectado
+          // Enviar confirmación de bienvenida inmediata al chat detectado (grupo o privado)
           await this.sendWelcomeMessage(token, discovered.id, discovered.name, cfg.phone);
         }
       }
@@ -128,7 +143,7 @@ class TelegramService {
         await configRepo.updateTelegramConfig({
           chat_ids: currentChatIds
         });
-        logger.info(`[Telegram] Se vincularon ${newlyAdded.length} nuevo(s) chat(s): ${newlyAdded.map(c => c.id).join(', ')}`);
+        logger.info(`[Telegram] Se vincularon ${newlyAdded.length} nuevo(s) chat(s): ${newlyAdded.map(c => `${c.name} (${c.id})`).join(', ')}`);
       }
 
       return {
@@ -138,8 +153,8 @@ class TelegramService {
         discoveredChats,
         chatIds: currentChatIds,
         message: newlyAdded.length > 0
-          ? `¡Éxito! Se vincularon ${newlyAdded.length} chat(s) de Telegram para recibir alertas en ${cfg.phone}.`
-          : `Se revisaron los mensajes del bot. Los chats detectados ya se encuentran vinculados.`
+          ? `¡Éxito! Se vincularon ${newlyAdded.length} destinatario(s) de Telegram (${newlyAdded.map(c => c.name).join(', ')}).`
+          : `Se revisaron los mensajes del bot. Todos los chats detectados ya están vinculados.`
       };
     } catch (err) {
       const errMsg = err.response?.data?.description || err.message;
@@ -149,21 +164,37 @@ class TelegramService {
   }
 
   /**
-   * Envia mensaje de confirmación de vinculación
+   * Envia mensaje de confirmación de vinculación (soporta grupos y usuarios individuales)
    */
   async sendWelcomeMessage(token, chatId, userName, targetPhone) {
     try {
-      const welcomeText = [
-        '🔔 *ingestIA - Notificaciones Activadas*',
-        '━━━━━━━━━━━━━━━━━━━━━━',
-        `¡Hola *${userName}*!`,
-        `Tu cuenta de Telegram ha sido vinculada exitosamente al servicio *ingestIA* para el número móvil *${targetPhone || '+595982304930'}*.`,
-        '',
-        '🎯 *Monitoreo Activo:* Eventos con *Smart Fallback*',
-        'Recibirás alertas en tiempo real cuando un registro de SAP B1 sea resuelto mediante fallback (ej. POST 409 ➔ PUT o PUT 404 ➔ POST).',
-        '━━━━━━━━━━━━━━━━━━━━━━',
-        '⚡ *Estado:* Sistema listo y operativo.'
-      ].join('\n');
+      const isGroup = String(chatId).startsWith('-');
+      const welcomeText = isGroup
+        ? [
+            '🔔 *ingestIA - Notificaciones Activadas para Grupo*',
+            '━━━━━━━━━━━━━━━━━━━━━━',
+            `¡Hola canal/grupo *${userName || 'ZabbixAlert'}*!`,
+            `Este grupo ha sido vinculado exitosamente al sistema *ingestIA* para recibir alertas en tiempo real de fallos y *Smart Fallback*.`,
+            '',
+            '🛠️ *Para soporte e inspección ingrese a:*',
+            'http://172.19.0.232:9025/',
+            '━━━━━━━━━━━━━━━━━━━━━━',
+            '⚡ *Estado:* Sistema de alertas activo y operativo.'
+          ].join('\n')
+        : [
+            '🔔 *ingestIA - Notificaciones Activadas*',
+            '━━━━━━━━━━━━━━━━━━━━━━',
+            `¡Hola *${userName}*!`,
+            `Tu cuenta de Telegram ha sido vinculada exitosamente al servicio *ingestIA* para el número móvil *${targetPhone || '+595982304930'}*.`,
+            '',
+            '🎯 *Monitoreo Activo:* Eventos con *Smart Fallback* y Errores',
+            'Recibirás alertas en tiempo real cuando un registro de SAP B1 sea resuelto mediante fallback o requiera soporte.',
+            '',
+            '🛠️ *Consola de administración:*',
+            'http://172.19.0.232:9025/',
+            '━━━━━━━━━━━━━━━━━━━━━━',
+            '⚡ *Estado:* Sistema listo y operativo.'
+          ].join('\n');
 
       await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
         chat_id: chatId,
@@ -176,27 +207,41 @@ class TelegramService {
   }
 
   /**
-   * Agrega un chat_id manualmente
+   * Agrega uno o varios chat_id manualmente (soporta IDs de grupos negativos y listas CSV)
    */
-  async addChatIdManually(chatId) {
+  async addChatIdManually(chatId, alias = null) {
     if (!chatId) return { success: false, error: 'Chat ID es obligatorio' };
-    const cleanId = String(chatId).trim();
+    const rawIds = String(chatId).split(',').map(s => s.trim()).filter(Boolean);
+    if (rawIds.length === 0) return { success: false, error: 'Chat ID inválido' };
+
     const cfg = await this.getConfig();
     let currentChatIds = this.parseChatIds(cfg.chat_ids).map(String);
+    const addedIds = [];
 
-    if (!currentChatIds.includes(cleanId)) {
-      currentChatIds.push(cleanId);
-      await configRepo.updateTelegramConfig({ chat_ids: currentChatIds });
+    for (const cleanId of rawIds) {
+      if (!currentChatIds.includes(cleanId)) {
+        currentChatIds.push(cleanId);
+        addedIds.push(cleanId);
+      }
     }
 
-    // Intentar enviar confirmación
-    if (cfg.bot_token) {
-      await this.sendWelcomeMessage(cfg.bot_token, cleanId, 'Usuario', cfg.phone);
+    if (addedIds.length > 0) {
+      await configRepo.updateTelegramConfig({ chat_ids: currentChatIds });
+      // Intentar enviar confirmación a los nuevos chatIds
+      if (cfg.bot_token) {
+        for (const newId of addedIds) {
+          const isGroup = newId.startsWith('-');
+          const targetName = alias || (isGroup ? 'Grupo ZabbixAlert' : 'Usuario');
+          await this.sendWelcomeMessage(cfg.bot_token, newId, targetName, cfg.phone);
+        }
+      }
     }
 
     return {
       success: true,
-      message: `Chat ID ${cleanId} registrado exitosamente.`,
+      message: addedIds.length > 0
+        ? `Chat ID(s) ${addedIds.join(', ')} registrado(s) exitosamente.`
+        : `Los Chat ID(s) ya se encontraban en la lista.`,
       chatIds: currentChatIds
     };
   }
@@ -321,6 +366,7 @@ class TelegramService {
 
   /**
    * Envia una alerta de error general (si está habilitado alert_error)
+   * Incluye enlace de soporte para atención inmediata por parte de los técnicos
    */
   async sendErrorAlert(eventData) {
     const cfg = await this.getConfig();
@@ -331,7 +377,11 @@ class TelegramService {
     if (!token || chatIds.length === 0) return { skipped: true };
 
     const { eventId, objectType, entryKey, action, error } = eventData;
-    const nowAsuncion = new Date().toLocaleString('es-PY', { timeZone: 'America/Asuncion' });
+    const nowAsuncion = new Date().toLocaleString('es-PY', {
+      timeZone: 'America/Asuncion',
+      dateStyle: 'short',
+      timeStyle: 'medium'
+    });
 
     const messageText = [
       '🚨 *ERROR EN MOTOR INGESTIA*',
@@ -343,20 +393,39 @@ class TelegramService {
       `💥 *Error:* ${error || 'Error desconocido'}`,
       `🕒 *Fecha/Hora:* ${nowAsuncion}`,
       '━━━━━━━━━━━━━━━━━━━━━━',
-      `📱 *Móvil:* \`${cfg.phone || '+595982304930'}\``
+      '🛠️ *Para soporte ingrese a:*',
+      'http://172.19.0.232:9025/'
     ].join('\n');
 
+    const sendResults = [];
     for (const chatId of chatIds) {
       try {
-        await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
+        const response = await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
           chat_id: chatId,
           text: messageText,
           parse_mode: 'Markdown'
         }, { timeout: 8000 });
+        sendResults.push({ chatId, success: true, messageId: response.data?.result?.message_id });
       } catch (err) {
-        // Log quietly
+        const errDetail = err.response?.data?.description || err.message;
+        logger.error(`[Telegram] Falló envío de alerta de error a chatId ${chatId}`, { error: errDetail });
+        sendResults.push({ chatId, success: false, error: errDetail });
       }
     }
+
+    const anySuccess = sendResults.some(r => r.success);
+    await configRepo.logAlert({
+      alert_type: 'ERROR',
+      event_id: eventId,
+      object_type: objectType,
+      entry_key: entryKey,
+      message: messageText,
+      recipients: JSON.stringify(chatIds),
+      status: anySuccess ? 'SENT' : 'FAILED',
+      error: anySuccess ? null : JSON.stringify(sendResults)
+    });
+
+    return { success: anySuccess, results: sendResults };
   }
 
   /**
