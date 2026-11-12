@@ -125,77 +125,88 @@ function transformAddress(cardCode, addr) {
 }
 
 /**
- * Transforms Items Service Layer object into Ingestion OITM payload
+ * Transforms Items Service Layer object into Ingestion tbl_oitm payload
+ * Matching the updated Ingestion API schema:
+ * {
+ *   "ItemCode": "A0001",
+ *   "ItemName": "Artículo de ejemplo",
+ *   "ArTaxCode": "IVA_10",
+ *   "ItemsGroupCode": "100.000000",
+ *   "Properties3": "tYES",
+ *   "SalesUnitWeight": "1.250000",
+ *   "DefaultWarehouse": "ITG-HAM",
+ *   "Valid": "tYES",
+ *   "Frozen": "tNO",
+ *   "U_ItemQty": "12.000000",
+ *   "U_beas_vg": "2"
+ * }
  * @param {Object} item - SAP B1 Items Service Layer JSON object
- * @param {Object} [options={}] - Options or bodyTemplate (supports booleanFormat: 'Y_N' | 'tYES')
- * @returns {Object} Target ingestion payload
+ * @param {Object} [options={}] - Options or bodyTemplate
+ * @returns {Object} Target ingestion payload for tbl_oitm
  */
 function transformItem(item, options = {}) {
   if (!item) {
     throw new Error('Item data is null or empty');
   }
 
-  // Detect requested boolean format: 'Y_N' (default, currently required by Ingestion API varchar(1))
-  // or 'tYES' if requested in options or bodyTemplate
-  let boolFormat = 'Y_N';
-  if (options && typeof options === 'object') {
-    if (options.booleanFormat) {
-      boolFormat = options.booleanFormat;
-    } else if (options.useTYesNo) {
-      boolFormat = 'tYES';
-    } else if (
-      String(options.validFor || options.valid || '').toUpperCase() === 'TYES' ||
-      String(options.QryInventario || '').toUpperCase() === 'TYES'
-    ) {
-      boolFormat = 'tYES';
-    }
+  // 1. ItemCode & ItemName
+  const itemCode = String(item.ItemCode || '').trim();
+  const itemName = String(item.ItemName || '').trim();
+
+  // 2. ArTaxCode (ej: 'IVA_10')
+  let arTaxCode = 'IVA_10';
+  if (item.ArTaxCode !== undefined && item.ArTaxCode !== null && String(item.ArTaxCode).trim() !== '') {
+    arTaxCode = String(item.ArTaxCode).trim();
+  } else if (item.TaxCodeAR !== undefined && item.TaxCodeAR !== null) {
+    const strTax = String(item.TaxCodeAR).trim();
+    arTaxCode = strTax.startsWith('IVA_') ? strTax : (strTax === '10' || strTax === '5' ? `IVA_${strTax}` : strTax);
   }
 
-  let taxCode = 10;
-  if (item.ArTaxCode) {
-    const match = String(item.ArTaxCode).match(/\d+/);
-    if (match) taxCode = parseInt(match[0], 10);
-  } else if (item.TaxCodeAR !== undefined) {
-    taxCode = toNumberOrNull(item.TaxCodeAR) || 10;
-  }
+  // 3. ItemsGroupCode (ej: '100.000000', string numérico con 6 decimales)
+  const rawGrpCode = item.ItemsGroupCode ?? item.ItmsGrpCod ?? 100;
+  const numGrpCode = Number(rawGrpCode);
+  const itemsGroupCode = !isNaN(numGrpCode) ? numGrpCode.toFixed(6) : '100.000000';
 
-  const weight = item.SalesUnitWeight !== undefined ? item.SalesUnitWeight : (item.SWeight1 !== undefined ? item.SWeight1 : 0);
+  // 4. Properties3 (ej: 'tYES' o 'tNO')
+  const rawProperties3 = item.Properties3 ?? item.properties3 ?? item.Properties_3 ?? item.QryGroup3 ?? item.qrygroup3 ?? item.QryInventario ?? item.qryinventario ?? item.InventoryItem;
+  const properties3 = toYesNo(rawProperties3 ?? 'tNO', 'tYES');
 
-  // U_ItemQty como entero numérico (ej: 1)
-  let itemQty = 1;
-  if (item.U_ItemQty !== undefined && item.U_ItemQty !== null) {
-    const parsedQty = parseInt(item.U_ItemQty, 10);
-    if (!isNaN(parsedQty)) {
-      itemQty = parsedQty;
-    }
-  }
+  // 5. SalesUnitWeight (ej: '1.250000', string numérico con 6 decimales)
+  const rawWeight = item.SalesUnitWeight !== undefined ? item.SalesUnitWeight : (item.SWeight1 !== undefined ? item.SWeight1 : 0);
+  const numWeight = Number(rawWeight);
+  const salesUnitWeight = !isNaN(numWeight) ? numWeight.toFixed(6) : '0.000000';
 
-  // U_beas_vg como string (ej: "1" o "2")
-  let beasVg = '1';
-  if (item.U_beas_vg !== undefined && item.U_beas_vg !== null) {
-    const strVg = String(item.U_beas_vg).trim();
-    if (strVg) beasVg = strVg;
-  }
+  // 6. DefaultWarehouse (ej: 'ITG-HAM' o '01')
+  const defaultWarehouse = toStringOrNull(item.DefaultWarehouse ?? item.DfltWH) || '01';
 
-  // Mapeo Properties3 en SAP Service Layer / QryGroup3 en HANA -> QryInventario en Ingestion API
-  // Soporta tanto 'tYES'/'tNO' como 'Y'/'N'
-  const rawQryInventario = item.Properties3 ?? item.properties3 ?? item.Properties_3 ?? item.QryGroup3 ?? item.qrygroup3 ?? item.QryInventario ?? item.qryinventario;
-  const finalQryInventario = (rawQryInventario !== undefined && rawQryInventario !== null)
-    ? rawQryInventario
-    : (item.InventoryItem ?? 'Y');
+  // 7. Valid ('tYES' / 'tNO')
+  const valid = toYesNo(item.Valid ?? item.validFor ?? item.validfor ?? item.valid ?? 'tYES', 'tYES');
+
+  // 8. Frozen ('tNO' / 'tYES')
+  const frozen = toYesNo(item.Frozen ?? item.frozenFor ?? item.frozenfor ?? item.frozen ?? 'tNO', 'tYES');
+
+  // 9. U_ItemQty (ej: '12.000000', string numérico con 6 decimales)
+  const rawQty = item.U_ItemQty !== undefined && item.U_ItemQty !== null ? item.U_ItemQty : 1;
+  const numQty = Number(rawQty);
+  const uItemQty = !isNaN(numQty) ? numQty.toFixed(6) : '1.000000';
+
+  // 10. U_beas_vg (ej: '2' o '1')
+  const uBeasVg = item.U_beas_vg !== undefined && item.U_beas_vg !== null && String(item.U_beas_vg).trim() !== ''
+    ? String(item.U_beas_vg).trim()
+    : '1';
 
   return {
-    DfltWH: toStringOrNull(item.DefaultWarehouse ?? item.DfltWH) || '01',
-    ItemCode: String(item.ItemCode || '').trim(),
-    ItemName: String(item.ItemName || '').trim(),
-    SWeight1: Number(weight).toFixed(6),
-    validFor: toYesNo(item.Valid ?? item.validFor ?? item.validfor ?? item.valid ?? 'Y', boolFormat),
-    TaxCodeAR: taxCode,
-    U_ItemQty: itemQty,
-    U_beas_vg: beasVg,
-    frozenFor: toYesNo(item.Frozen ?? item.frozenFor ?? item.frozenfor ?? item.frozen ?? 'N', boolFormat),
-    ItmsGrpCod: toNumberOrNull(item.ItemsGroupCode ?? item.ItmsGrpCod) || 100,
-    QryInventario: toYesNo(finalQryInventario, boolFormat)
+    ItemCode: itemCode,
+    ItemName: itemName,
+    ArTaxCode: arTaxCode,
+    ItemsGroupCode: itemsGroupCode,
+    Properties3: properties3,
+    SalesUnitWeight: salesUnitWeight,
+    DefaultWarehouse: defaultWarehouse,
+    Valid: valid,
+    Frozen: frozen,
+    U_ItemQty: uItemQty,
+    U_beas_vg: uBeasVg
   };
 }
 
